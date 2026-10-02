@@ -1,0 +1,66 @@
+name: email-assist
+services:
+  app:
+    build: .
+    image: ${EMAIL_ASSIST_IMAGE:-email-assist:local}
+    container_name: email-assist
+    restart: unless-stopped
+    init: true
+    ports:
+      - 127.0.0.1:${HOST_PORT:-8000}:8000
+    environment:
+      PGHOST: ${PGHOST:-postgres}
+      PGDATABASE: ${PGDATABASE:-email_assist}
+      PGUSER: ${PGUSER:-email_assist}
+      AI_BASE_URL: ${AI_BASE_URL:?Set AI_BASE_URL in .env}
+      AI_MODEL: ${AI_MODEL:?Set AI_MODEL in .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in .env to the browser-facing origin}
+      WEB_USERNAME: ${WEB_USERNAME:-admin}
+      IMAP_USERNAME: ${IMAP_USERNAME:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${SECRETS_DIR:-./secrets}:/run/secrets:ro
+      - ${SOCKET_DIR:-./run}:/mail:ro
+      - ${STATE_DIR:-./state}:/state
+    networks:
+      - database
+      - ai
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 96
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      options: {max-size: 10m, max-file: '3'}
+  imap-socket:
+    image: ${EMAIL_ASSIST_IMAGE:-email-assist:local}
+    container_name: email-assist-imap-socket
+    command: [python, relay.py]
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    volumes:
+      - ${SOCKET_DIR:-./run}:/mail
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 32
+    logging:
+      options: {max-size: 10m, max-file: '3'}
+networks:
+  database:
+    external: true
+    name: ${DATABASE_NETWORK:-database}
+  ai:
+    external: true
+    name: ${AI_NETWORK:-ai}
