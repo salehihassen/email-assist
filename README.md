@@ -6,7 +6,10 @@ reasons, suggested next steps, and text previews.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set `PUBLIC_ORIGIN` to the exact origin you
+Copy the commented [`.env.example`](.env.example) to `.env`. It includes local
+browser defaults and placeholders for your AI endpoint, database, networks,
+and storage. Replace the AI placeholders and configure your own services before
+starting the app. Set `PUBLIC_ORIGIN` to the exact origin you
 use in your browser (scheme and hostname, optional port, no trailing slash).
 Set `WEB_USERNAME` for the app login. Set `IMAP_USERNAME` if you supply your
 Bridge password as a file; otherwise enter both Bridge credentials in the UI.
