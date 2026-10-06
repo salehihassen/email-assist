@@ -1,10 +1,54 @@
 import unittest
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
+from fastapi import HTTPException
+from fastapi.security import HTTPBasicCredentials
+from starlette.requests import Request
 import app
 import mail
 
 class Safety(unittest.TestCase):
+    def test_auth_uses_configured_username_and_secret_password(self):
+        with patch.object(app, 'WEB_USERNAME', 'custom-user'), patch.object(app, 'secret', return_value='test-password'):
+            app.auth(HTTPBasicCredentials(username='custom-user', password='test-password'))
+            for username, password in [('admin', 'test-password'), ('custom-user', 'wrong-password')]:
+                with self.assertRaises(HTTPException) as error:
+                    app.auth(HTTPBasicCredentials(username=username, password=password))
+                self.assertEqual(error.exception.status_code, 401)
+
+    def test_post_guard_rejects_foreign_origin_and_missing_header(self):
+        with patch.object(app, 'ORIGIN', 'https://inbox.example.test'):
+            for origin, marker, allowed in [('https://inbox.example.test', '1', True),
+                                           ('https://foreign.example.test', '1', False),
+                                           ('https://inbox.example.test', '', False)]:
+                request = Request({'type': 'http', 'headers': [
+                    (b'origin', origin.encode()), (b'x-email-assist', marker.encode())]})
+                if allowed:
+                    app.post_guard(request)
+                else:
+                    with self.assertRaises(HTTPException) as error:
+                        app.post_guard(request)
+                    self.assertEqual(error.exception.status_code, 403)
+
+    def test_mailbox_username_from_env_or_saved_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secrets_dir = root / 'secrets'
+            state_dir = root / 'state'
+            secrets_dir.mkdir()
+            state_dir.mkdir()
+            with patch.object(app, 'SECRET', secrets_dir), patch.object(app, 'STATE', state_dir), \
+                 patch.dict(os.environ, {'IMAP_USERNAME': 'configured@example.test'}):
+                self.assertEqual(app.mailbox_credentials(), ('configured@example.test', ''))
+                (state_dir / 'imap-username').write_text('saved@example.test')
+                (state_dir / 'imap-password').write_text('saved-password')
+                self.assertEqual(app.mailbox_credentials(), ('saved@example.test', 'saved-password'))
+                (secrets_dir / 'imap-password').write_text('mounted-password')
+                self.assertEqual(app.mailbox_credentials(), ('saved@example.test', 'mounted-password'))
+
     def test_seven_day_boundary(self):
         now = datetime.now(timezone.utc)
         self.assertTrue(app.fresh(now-timedelta(days=7)+timedelta(seconds=1), now))

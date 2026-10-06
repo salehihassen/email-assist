@@ -2,4 +2,12 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env
+.env.*
+!.env.example
 secrets/
+state/
+run/
+backups/
+*.pem
+*.key
+*.dump

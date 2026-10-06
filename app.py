@@ -23,7 +23,8 @@ import mail
 SECRET = Path('/run/secrets')
 STATE = Path('/state')
 MODEL = os.getenv('AI_MODEL', '')
-ORIGIN = os.getenv('PUBLIC_ORIGIN', 'https://example.com')
+ORIGIN = os.getenv('PUBLIC_ORIGIN', 'http://localhost:8000')
+WEB_USERNAME = os.getenv('WEB_USERNAME', 'admin')
 LOCAL_TZ = ZoneInfo(os.getenv('TZ', 'UTC'))
 lock = threading.Lock()
 stop = threading.Event()
@@ -38,7 +39,7 @@ def db():
     return psycopg.connect(password=secret('db-password'), row_factory=dict_row)
 
 def auth(credentials: HTTPBasicCredentials = Depends(security)):
-    valid_user = secrets.compare_digest(credentials.username.encode(), os.getenv('WEB_USERNAME', 'admin').encode())
+    valid_user = secrets.compare_digest(credentials.username.encode(), WEB_USERNAME.encode())
     valid_password = secrets.compare_digest(credentials.password.encode(), secret('web-password').encode())
     if not (valid_user and valid_password):
         raise HTTPException(401, 'Authentication required', headers={'WWW-Authenticate': 'Basic realm="Email Assist"'})

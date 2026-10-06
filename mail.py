@@ -35,7 +35,7 @@ def connect(username, password, cert='/run/secrets/bridge-cert.pem'):
         raise ValueError('Invalid credential characters')
     client = UnixIMAP(host='127.0.0.1', timeout=60)
     try:
-        # Trust only the certificate copied from local Bridge listener.
+        # Trust only the certificate copied from the local Bridge listener.
         ctx = ssl.create_default_context(cafile=cert)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         client.starttls(ssl_context=ctx)
