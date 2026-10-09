@@ -22,6 +22,17 @@ jobs:
     name: Build and smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: email_assist
+          POSTGRES_DB: email_assist
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U email_assist -d email_assist"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,6 +50,19 @@ jobs:
             -e PYTHONPATH=/tests \
             -v "$PWD/tests:/tests:ro" \
             email-assist:ci python -m unittest test_safety test_web -v
+
+      - name: Test session security and score reuse against isolated database schemas
+        run: |
+          printf '%s' 'ci-only-password' > "$RUNNER_TEMP/email-assist-db-password"
+          chmod 644 "$RUNNER_TEMP/email-assist-db-password"
+          docker run --rm --network host --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e PGHOST=127.0.0.1 -e PGDATABASE=email_assist -e PGUSER=email_assist \
+            -e PYTHONPATH=/tests \
+            -v "$RUNNER_TEMP/email-assist-db-password:/run/secrets/db-password:ro" \
+            -v "$PWD/tests:/tests:ro" \
+            email-assist:ci python -m unittest test_auth test_sync -v
 
   secrets:
     name: Gitleaks

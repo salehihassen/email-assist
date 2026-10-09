@@ -3,6 +3,10 @@ let topMode = true, page = 1, searchTimer, total = 0;
 const detailId = location.pathname.startsWith('/email/') ? location.pathname.split('/')[2] : null;
 async function api(path, options = {}) {
   const r = await fetch(path, { ...options, headers: {'Content-Type':'application/json','X-Email-Assist':'1',...(options.headers || {})} });
+  if (r.status === 401) {
+    location.replace('/login?next=' + encodeURIComponent(location.pathname));
+    throw new Error('Please sign in to continue.');
+  }
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'Request failed. Please try again.'); }
   return r.json();
 }
@@ -43,3 +47,16 @@ $('top-tab').onclick=()=>mode(true);$('all-tab').onclick=()=>mode(false);$('prev
 async function loadDetail(){ $('list-view').hidden=true;$('detail').hidden=false;try{const d=await api('/api/email/'+encodeURIComponent(detailId));$('detail-title').textContent=d.subject;$('detail-from').textContent=d.sender;$('detail-date').textContent=date(d.sent_at);$('detail-score').replaceWith(Object.assign(score(d.score),{id:'detail-score'}));$('detail-reason').textContent=d.reason || 'This email has not been scored yet.';$('detail-action').textContent=d.suggested_action || 'Refresh the inbox to analyze it.';$('detail-analysis').textContent=`Analyzed: ${date(d.analyze_date)} · ${d.model || 'Pending'}`;$('detail-body').textContent=d.body || '(No text preview available)';$('truncated').hidden=!d.truncated;$('copy-subject').onclick=async()=>{try{await navigator.clipboard.writeText(d.subject);$('copy-subject').textContent='Subject copied';}catch(e){showError('Copy failed. Select and copy the title above.');}};}catch(e){showError(e.message);}}
 $('today').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}).toUpperCase()+' · YOUR REPLY QUEUE';
 loadStatus();if(detailId)loadDetail();setInterval(loadStatus,5000);
+
+$('logout').onclick = async () => {
+  $('logout').disabled = true;
+  try {
+    await api('/api/logout', {method:'POST'});
+    location.replace('/login');
+  } catch (error) {
+    showError(error.message);
+    $('logout').disabled = false;
+  }
+};
+// Recheck authentication if a browser restores a page from its back cache.
+window.addEventListener('pageshow', event => { if (event.persisted) loadStatus(); });

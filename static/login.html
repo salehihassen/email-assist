@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · Email Assist</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/login.js"></script>
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <a class="brand" href="/login">✳ <span>Email Assist</span></a>
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="eyebrow">YOUR PRIVATE INBOX</div>
+      <h1 id="login-title">Welcome back.</h1>
+      <p>Sign in to your daily reply queue.</p>
+      <form id="login-form" method="post" action="/api/login">
+        <label for="login-username">Username</label>
+        <input id="login-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required autofocus>
+        <label for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="512" required aria-describedby="login-error">
+        <p id="login-error" class="login-error" role="alert" aria-live="polite"></p>
+        <button id="login-submit" type="submit">Sign in</button>
+      </form>
+      <noscript><p>Enable JavaScript to sign in securely.</p></noscript>
+    </section>
+    <p class="login-note">Private inbox. Read-only access.</p>
+  </main>
+</body>
+</html>

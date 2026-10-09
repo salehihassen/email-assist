@@ -1,7 +1,6 @@
 import contextlib
 import json
 import os
-import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -12,13 +11,14 @@ from zoneinfo import ZoneInfo
 import httpx
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 import mail
+import auth as web_auth
+from urllib.parse import quote
 
 SECRET = Path('/run/secrets')
 STATE = Path('/state')
@@ -30,7 +30,16 @@ lock = threading.Lock()
 stop = threading.Event()
 status_lock = threading.Lock()
 status = dict(running=False, phase='idle', processed=0, total=0, analyzed=0, cached=0, error=None)
-security = HTTPBasic()
+_credentials = None
+
+def credentials():
+    global _credentials
+    # Reload a changed credential file; its fingerprint revokes old sessions.
+    path = SECRET / ('web-password-hash' if (SECRET / 'web-password-hash').exists() else 'web-password')
+    stamp = (str(path), path.stat().st_mtime_ns)
+    if _credentials is None or _credentials[0] != stamp:
+        _credentials = (stamp, web_auth.credential_record(SECRET))
+    return _credentials[1]
 
 def secret(name):
     return (SECRET / name).read_text().strip()
@@ -38,17 +47,16 @@ def secret(name):
 def db():
     return psycopg.connect(password=secret('db-password'), row_factory=dict_row)
 
-def auth(credentials: HTTPBasicCredentials = Depends(security)):
-    valid_user = secrets.compare_digest(credentials.username.encode(), WEB_USERNAME.encode())
-    valid_password = secrets.compare_digest(credentials.password.encode(), secret('web-password').encode())
-    if not (valid_user and valid_password):
-        raise HTTPException(401, 'Authentication required', headers={'WWW-Authenticate': 'Basic realm="Email Assist"'})
+def auth(request: Request):
+    if not web_auth.authenticated(db, request, credentials()[1]):
+        raise HTTPException(401, 'Please sign in to continue.')
 
 def post_guard(request: Request):
-    if request.headers.get('x-email-assist') != '1' or request.headers.get('origin', ORIGIN) != ORIGIN:
-        raise HTTPException(403, 'Refresh this page and try again')
+    web_auth.same_origin(request, ORIGIN)
+
 
 def init_db():
+    web_auth.initialize(db)
     with db() as conn:
         conn.execute('''CREATE TABLE IF NOT EXISTS emails (
             id text PRIMARY KEY, uid bigint NOT NULL, uidvalidity text NOT NULL,
@@ -281,9 +289,36 @@ def health():
         conn.execute('SELECT 1')
     return {'ok': True}
 
-@app.get('/', dependencies=[Depends(auth)])
-@app.get('/email/{email_id}', dependencies=[Depends(auth)])
-def index(email_id: str = ''):
+class Login(BaseModel):
+    username: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=512)
+    next: str = Field(default='/', max_length=256)
+
+@app.get('/login')
+def login_page():
+    return FileResponse('static/login.html')
+
+@app.post('/api/login', dependencies=[Depends(post_guard)])
+def login(value: Login, request: Request):
+    encoded, version = credentials()
+    token = web_auth.login(db, request, value.username, value.password, WEB_USERNAME, encoded, version)
+    response = JSONResponse({'next': web_auth.safe_next(value.next)})
+    web_auth.set_cookie(response, token)
+    return response
+
+@app.post('/api/logout', dependencies=[Depends(auth), Depends(post_guard)])
+def logout(request: Request):
+    with db() as conn:
+        web_auth.revoke(conn, request.cookies.get(web_auth.COOKIE))
+    response = JSONResponse({'ok': True})
+    web_auth.clear_cookie(response)
+    return response
+
+@app.get('/', response_model=None)
+@app.get('/email/{email_id}', response_model=None)
+def index(request: Request, email_id: str = ''):
+    if not web_auth.authenticated(db, request, credentials()[1]):
+        return RedirectResponse('/login?next=' + quote(web_auth.safe_next(request.url.path), safe=''), status_code=303)
     return FileResponse('static/index.html')
 
 @app.get('/api/status', dependencies=[Depends(auth)])

@@ -5,19 +5,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 from fastapi import HTTPException
-from fastapi.security import HTTPBasicCredentials
 from starlette.requests import Request
 import app
 import mail
 
 class Safety(unittest.TestCase):
-    def test_auth_uses_configured_username_and_secret_password(self):
-        with patch.object(app, 'WEB_USERNAME', 'custom-user'), patch.object(app, 'secret', return_value='test-password'):
-            app.auth(HTTPBasicCredentials(username='custom-user', password='test-password'))
-            for username, password in [('admin', 'test-password'), ('custom-user', 'wrong-password')]:
-                with self.assertRaises(HTTPException) as error:
-                    app.auth(HTTPBasicCredentials(username=username, password=password))
-                self.assertEqual(error.exception.status_code, 401)
+    def test_session_auth_never_sends_basic_challenge(self):
+        request = Request({'type':'http','headers':[]})
+        with patch.object(app, 'credentials', return_value=('hash','version')):
+            with self.assertRaises(HTTPException) as error:
+                app.auth(request)
+        self.assertEqual(error.exception.status_code,401)
+        self.assertFalse(error.exception.headers)
 
     def test_post_guard_rejects_foreign_origin_and_missing_header(self):
         with patch.object(app, 'ORIGIN', 'https://inbox.example.test'):

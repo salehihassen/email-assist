@@ -40,7 +40,8 @@ make them accessible to container UID 1000. Put these files in `SECRETS_DIR`:
 
 | File | Contents |
 | --- | --- |
-| `web-password` | A strong, unique app login password |
+| `web-password` | A strong, unique app login password (compatibility / operator recovery) |
+| `web-password-hash` (recommended) | Argon2id hash of the app password; takes precedence over `web-password` |
 | `db-password` | Password for the dedicated PostgreSQL role |
 | `ai-key` | API key for your configured AI endpoint |
 | `bridge-cert.pem` | Certificate copied from the trusted local Bridge listener |
@@ -62,12 +63,25 @@ docker logs email-assist --tail 30
 
 The app binds only to host loopback on your configured `HOST_PORT`. Use an HTTPS reverse proxy
 with private network access controls, and set `PUBLIC_ORIGIN` to its external
-origin. Local testing with the default port can use `PUBLIC_ORIGIN=http://localhost:8000`.
+origin. Session cookies require HTTPS, including browser testing. Set `PUBLIC_ORIGIN` to the exact HTTPS origin (without a trailing slash).
 If you run Compose from another directory, pass `--env-file /path/to/.env`.
 
 ## Use
 
-Log in with your configured `WEB_USERNAME` and `web-password`. Enter the Bridge
+The **Sign in** page uses your configured `WEB_USERNAME` and existing app password.
+Use **Sign out** to revoke the current browser session. Sessions expire after
+one hour without requests or 24 hours from sign-in; signing in issues a new token.
+The browser receives an opaque `Secure`, `HttpOnly`, `SameSite=Strict`, host-only
+cookie, never the password. Only a SHA-256 hash of that random token is stored
+in PostgreSQL. Password-hash changes revoke existing sessions.
+
+Login is limited to ten attempts per five minutes for the single account,
+including across container restarts. Incorrect usernames and passwords share
+the same error. Login and other POST requests require the exact configured
+Origin and a custom header. Browser clients redirect to the login page when
+the session expires; unauthenticated APIs return 401 without a Basic challenge.
+
+Enter your configured app credentials to sign in. Enter the Bridge
 IMAP username and password if needed, then press **Refresh inbox**.
 **Top 10** shows the highest-scored emails needing a reply. **All inbox** shows
 all titles with search and pagination. Each title links to its preview,
@@ -101,8 +115,9 @@ recommendations requiring no response are excluded from Top 10.
   ordinary Docker networks, without the Docker socket or Bridge state mounts.
 - STARTTLS trusts the certificate copied from the local Bridge endpoint and
   checks its `127.0.0.1` identity. Changed certificates fail closed.
-- Basic authentication over HTTPS protects inbox data. POST endpoints check
-  the configured origin and require a custom header. Email/model text is
+- Server-side cookie sessions over HTTPS protect inbox data. Passwords are
+  verified using Argon2id; POST endpoints check the exact configured origin
+  and require a custom header. Email/model text is
   rendered as text; remote images and email links are not loaded. CSP and
   no-store headers apply. Access logging is disabled.
 - At most the first 256 KiB of each MIME message is fetched; a 16,000-character
@@ -159,3 +174,23 @@ Integration tests in `tests/test_sync.py` require PostgreSQL and the mounted
 reuse/expiry, UIDVALIDITY resets, answered/removed mail, and preserving scores
 on AI failure. Run them against a test database with the corresponding `PG*`
 environment variables; they mock IMAP and AI and never read the real inbox.
+
+### Provision or rotate the password hash
+
+The password hash can be created from the existing mode-600 `web-password`
+without placing a password in shell arguments or logs:
+
+```sh
+docker compose run --rm --no-deps -v "${SECRETS_DIR:-./secrets}:/hash-output" app python -c \
+  "from pathlib import Path; from argon2 import PasswordHasher; import os; os.umask(0o077); p=Path('/hash-output'); (p/'web-password-hash').write_text(PasswordHasher().hash((p/'web-password').read_text().strip()))"
+```
+
+Provision `web-password-hash` on the host and mount it with the other secrets.
+The app uses that hash when present; a plaintext credential file is optional
+in this mode and can be kept separately for operator recovery. To change the
+password, replace the hash with one for the new password. Existing sessions
+are rejected immediately on subsequent requests.
+
+Session tables are additive: deployment never changes cached email rows.
+They are covered by the existing database backups. Login attempt records and
+session tokens are never logged or returned by inbox APIs.
