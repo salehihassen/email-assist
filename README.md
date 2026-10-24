@@ -13,8 +13,10 @@ browser defaults and placeholders for your AI endpoint, database, networks,
 and storage. Replace the AI placeholders and configure your own services before
 starting the app. Set `PUBLIC_ORIGIN` to the exact origin you
 use in your browser (scheme and hostname, optional port, no trailing slash).
-Set `WEB_USERNAME` for the app login. Add mail providers in the UI or with
-`MAIL_PROVIDERS` (see [Mail providers](#mail-providers)).
+Set `WEB_USERNAME` for the app login. Add mail providers on the app's
+**Providers** page or, if you prefer, in `.env`; `.env.example` includes a
+commented example of setting providers with environment variables (see
+[Mail providers](#mail-providers)).
 Personal hostnames and account names belong in your ignored `.env` file.
 Compose injects these variables into the app; running Python directly requires
 setting them in the process environment.
@@ -73,28 +75,68 @@ If you run Compose from another directory, pass `--env-file /path/to/.env`.
 
 ## Mail providers
 
-Each provider has a name, connection type, host and port (IMAP only),
-username, password, optional webmail link, and optional scoring guidance that
-is added to the AI prompt, such as "prioritize clients and invoices; rank SaaS
-notifications low". The **Providers** page (`/providers`, linked in the header)
-adds, edits, removes, and runs **Test connection**. A test logs in read-only and reports the inbox size.
+Email Assist reads any number of mailboxes. Each provider has a name,
+connection type, host and port (IMAP only), username, password, optional
+webmail link, and optional scoring guidance that is added to the AI prompt,
+such as "prioritize clients and invoices; rank SaaS notifications low".
+For Zoho, Gmail, and similar services, enable IMAP access in their settings
+and use an app-specific password; the username is usually the full email
+address. Only implicit TLS (usually port 993) is supported; plain IMAP and
+STARTTLS servers other than Bridge are not.
 
-To define providers in the environment instead, list their names in
-`MAIL_PROVIDERS` and set `MAIL_<NAME>_LABEL`, `_TYPE` (`imap` or `bridge`),
-`_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`, `_WEBMAIL`, and `_FOCUS`; names use
-lowercase letters, digits, and hyphens, and become uppercase with underscores
-in variable names. Fields set this way are locked in the UI and reapplied on
-startup; the rest stay editable. Environment providers can't be removed in the
-UI. [`.env.example`](.env.example) shows a Bridge plus Zoho Mail setup. For
-Zoho, Gmail, and similar services, enable IMAP access in their settings and
-use an app-specific password. Only implicit TLS (usually port 993) is
-supported; plain IMAP and STARTTLS servers other than Bridge are not.
+### In the app
 
-Upgrading from the single-mailbox version migrates its Proton mailbox to a
-Bridge provider named `proton`, keeping scores and their dates. A UI-saved
-password moves to `state/proton-imap-password`; rename a
-`secrets/imap-password` file to `secrets/proton-imap-password` yourself.
-To keep environment control, add `proton` to `MAIL_PROVIDERS`.
+The **Providers** page (`/providers`, linked in the header) adds, edits, and
+removes providers. **Test connection** logs in read-only with the form's
+values, before or after saving, and reports the inbox size or what failed.
+
+### With environment variables (optional)
+
+[`.env.example`](.env.example) shows how to set providers in `.env` instead;
+copy its commented `MAIL_*` lines and edit them. List provider names in
+`MAIL_PROVIDERS`, then set `MAIL_<NAME>_*` for each. Names use lowercase
+letters, digits, and hyphens; in variable names they become uppercase with
+underscores, so `side-project` uses `MAIL_SIDE_PROJECT_HOST`.
+
+```sh
+MAIL_PROVIDERS=proton,work
+MAIL_PROTON_LABEL=Personal
+MAIL_PROTON_TYPE=bridge
+MAIL_WORK_LABEL=Business
+MAIL_WORK_HOST=imappro.zoho.com
+MAIL_WORK_USERNAME=you@yourcompany.com
+```
+
+| Suffix | Meaning | Default |
+| --- | --- | --- |
+| `_LABEL` | Display name | The name, capitalized |
+| `_TYPE` | `imap` or `bridge` | `imap` |
+| `_HOST`, `_PORT` | IMAP server; ignored for `bridge` | Host required for `imap`; port `993` |
+| `_USERNAME`, `_PASSWORD` | Mailbox login | None |
+| `_WEBMAIL` | `https://` link for **Open webmail** | None |
+| `_FOCUS` | Extra scoring guidance | General guidance |
+
+Settings are validated at startup; invalid values stop the app with an error.
+Non-empty fields set this way are locked in the UI and reapplied on every
+start; unset fields stay editable there, so you can, for example, enter the
+username in the app. Passwords come from `secrets/<name>-imap-password`, then
+`MAIL_<NAME>_PASSWORD`, then the UI; prefer the secrets file, because container
+environment variables are visible through `docker inspect`. Environment
+providers can't be removed in the UI. Removing one from `MAIL_PROVIDERS` keeps
+it, with its emails and scores, as an ordinary provider you can edit or remove.
+The Compose file passes the whole `.env` to the app, so new `MAIL_*`
+variables need no Compose changes. Providers from both sources rank together.
+
+### Upgrading from a single mailbox
+
+The first start of this version migrates the single Proton mailbox to a
+Bridge provider named `proton`, keeping scores, their dates, and sync history.
+Cached emails get new provider-scoped IDs, so older `/email/...` links open
+**Email not found**. The Bridge username comes from `state/imap-username` or,
+failing that, `IMAP_USERNAME`. A UI-saved password moves to
+`state/proton-imap-password`; rename a `secrets/imap-password` file to
+`secrets/proton-imap-password` yourself. To manage it from the environment
+afterwards, add `proton` to `MAIL_PROVIDERS`.
 
 ## Use
 
@@ -169,7 +211,8 @@ runtime data and database backups outside the public repository.
 ## Maintenance and verification
 
 The daily worker retries failed runs at most hourly after 07:00. A manual
-refresh can retry sooner; simultaneous refresh requests share one worker.
+refresh can retry sooner; simultaneous refresh requests for a provider share
+its worker.
 Partial runs retain completed scores.
 
 If Bridge rotates its certificate, copy the new certificate only after
@@ -185,7 +228,8 @@ docker compose restart app
 Use your configured `SECRETS_DIR` if it differs from the default `./secrets`.
 
 Safety tests cover IMAP command blocking, non-PEEK rejection, MIME sanitization,
-AI response validation, and configuration/authentication boundaries. Run them
+AI response validation, provider settings and password precedence, and
+configuration/authentication boundaries. Run them
 in an environment with `requirements.txt` installed:
 
 ```sh
@@ -195,7 +239,7 @@ python -m unittest discover -s tests -p test_web.py -v
 
 GitHub Actions builds the Docker image and runs these safety and HTTP smoke
 tests with networking disabled. The smoke tests check authenticated page
-rendering, static assets, security headers, and API authentication, skipping
+rendering (inbox and **Providers**), static assets, security headers, and API authentication, skipping
 the database/inbox startup hooks. A separate Gitleaks job scans full Git
 history. CI needs no inbox, database, AI credentials, or custom GitHub secrets.
 
@@ -209,10 +253,10 @@ set the GHCR package visibility to public if you want anonymous image pulls.
 
 Integration tests in `tests/test_sync.py` require PostgreSQL and the mounted
 `db-password` file. They create and drop a disposable schema and cover cache
-reuse/expiry, UIDVALIDITY resets, answered/removed mail, and preserving scores
-on AI failure, provider isolation and ranking across providers, environment
-locking, and the single-mailbox upgrade. Run them against a test database with the corresponding `PG*`
-environment variables; they mock IMAP and AI and never read the real inbox.
+reuse/expiry, UIDVALIDITY resets, answered/removed mail, preserving scores on
+AI failure, provider isolation and ranking across providers, provider
+create/edit/remove, environment locking, and the single-mailbox upgrade. Run
+them against a test database with the corresponding `PG*` environment variables; they mock IMAP and AI and never read the real inbox.
 
 ### Provision or rotate the password hash
 
@@ -230,6 +274,6 @@ in this mode and can be kept separately for operator recovery. To change the
 password, replace the hash with one for the new password. Existing sessions
 are rejected immediately on subsequent requests.
 
-Session tables are additive: deployment never changes cached email rows.
-They are covered by the existing database backups. Login attempt records and
+Session tables are additive. Apart from the one-time single-mailbox upgrade
+above, deployments do not rewrite cached email rows. Both are covered by the existing database backups. Login attempt records and
 session tokens are never logged or returned by inbox APIs.
