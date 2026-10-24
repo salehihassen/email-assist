@@ -8,6 +8,10 @@ services:
     init: true
     ports:
       - 127.0.0.1:${HOST_PORT:-8000}:8000
+    # Passes MAIL_PROVIDERS and its MAIL_<NAME>_* settings; see .env.example.
+    env_file:
+      - path: .env
+        required: false
     environment:
       PGHOST: ${PGHOST:-postgres}
       PGDATABASE: ${PGDATABASE:-email_assist}

@@ -10,7 +10,7 @@ from email import policy
 from email.utils import parsedate_to_datetime
 from bs4 import BeautifulSoup
 
-class UnixIMAP(imaplib.IMAP4):
+class ReadOnly:
     def _command(self, name, *args):
         # Keep writes impossible through this client, including future code changes.
         if name not in {'CAPABILITY', 'STARTTLS', 'LOGIN', 'EXAMINE', 'UID', 'LOGOUT'}:
@@ -24,21 +24,27 @@ class UnixIMAP(imaplib.IMAP4):
                     raise ValueError('Message bodies must be fetched using BODY.PEEK')
         return super()._command(name, *args)
 
+class UnixIMAP(ReadOnly, imaplib.IMAP4):
     def _create_socket(self, timeout):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect('/mail/imap.sock')
         return sock
 
-def connect(username, password, cert='/run/secrets/bridge-cert.pem'):
+class TLSIMAP(ReadOnly, imaplib.IMAP4_SSL):
+    pass
+
+def connect(username, password, host=None, port=993, cert='/run/secrets/bridge-cert.pem'):
+    """Bridge over the local socket when host is None, otherwise IMAPS to host:port."""
     if any(c in username + password for c in ('\r', '\n', '\x00')):
         raise ValueError('Invalid credential characters')
-    client = UnixIMAP(host='127.0.0.1', timeout=60)
+    # Bridge: trust only the certificate copied from the local listener.
+    ctx = ssl.create_default_context(cafile=None if host else cert)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    client = TLSIMAP(host, port, ssl_context=ctx, timeout=60) if host else UnixIMAP(host='127.0.0.1', timeout=60)
     try:
-        # Trust only the certificate copied from the local Bridge listener.
-        ctx = ssl.create_default_context(cafile=cert)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        client.starttls(ssl_context=ctx)
+        if not host:
+            client.starttls(ssl_context=ctx)
         client.login(username, password)
         typ, _ = client.select('INBOX', readonly=True)  # Sends EXAMINE.
         if typ != 'OK':

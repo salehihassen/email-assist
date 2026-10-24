@@ -104,6 +104,7 @@ class Sessions(unittest.TestCase):
         for target in ['https://evil.example.test','//evil.example.test','/\\evil.example.test','/api/logout']:
             self.assertEqual(self.login(next=target).json()['next'],'/')
         self.assertEqual(self.login(next='/email/example').json()['next'],'/email/example')
+        self.assertEqual(self.login(next='/providers').json()['next'],'/providers')
 
 if __name__ == '__main__':
     unittest.main()

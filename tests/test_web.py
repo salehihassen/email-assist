@@ -23,15 +23,20 @@ class WebSmoke(unittest.TestCase):
         self.assertTrue(response.headers['location'].startswith('/login'))
         self.assertNotIn('www-authenticate',response.headers)
         self.assertEqual(self.client.get('/login').status_code,200)
+        response = self.client.get('/providers', follow_redirects=False)
+        self.assertEqual(response.headers['location'], '/login?next=%2Fproviders')
         with patch.object(app.web_auth, 'authenticated', return_value=True):
+            settings = self.client.get('/providers')
             response = self.client.get('/')
+        self.assertEqual(settings.status_code, 200)
+        self.assertIn('/static/providers.js', settings.text)
         self.assertEqual(response.status_code, 200)
         self.assertIn('Email Assist', response.text)
         self.assertIn('/static/app.js', response.text)
         self.assertIn('/static/style.css', response.text)
         self.assertEqual(response.headers['cache-control'], 'no-store')
         self.assertIn("frame-ancestors 'none'", response.headers['content-security-policy'])
-        for path in ('/static/app.js', '/static/style.css', '/static/login.js'):
+        for path in ('/static/app.js', '/static/common.js', '/static/providers.js', '/static/style.css', '/static/login.js'):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
@@ -41,9 +46,10 @@ class WebSmoke(unittest.TestCase):
         for path in ('/api/status', '/api/emails', '/api/email/example'):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 401)
-        for path in ('/api/refresh', '/api/setup'):
-            with self.subTest(path=path):
-                self.assertEqual(self.client.post(path, json={}).status_code, 401)
+        for method, path in [('post', '/api/refresh'), ('post', '/api/providers'), ('post', '/api/providers/test'),
+                             ('put', '/api/providers/example'), ('delete', '/api/providers/example')]:
+            with self.subTest(path=path, method=method):
+                self.assertEqual(self.client.request(method, path, json={}).status_code, 401)
 
 
 if __name__ == '__main__':

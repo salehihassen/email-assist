@@ -1,8 +1,10 @@
 # Email Assist
 
-Private, read-only daily inbox triage for Proton Mail Bridge. A small FastAPI
-app presents the ten highest-priority emails needing a reply, with scores,
-reasons, suggested next steps, and text previews.
+Private, read-only daily inbox triage across any number of mail providers:
+standard IMAP over TLS (Zoho Mail, Fastmail, Gmail, and others) and Proton Mail
+Bridge. A small FastAPI app presents the ten highest-priority emails needing a
+reply across all inboxes or for one provider, with scores, reasons, suggested
+next steps, and text previews.
 
 ## Configuration
 
@@ -11,14 +13,15 @@ browser defaults and placeholders for your AI endpoint, database, networks,
 and storage. Replace the AI placeholders and configure your own services before
 starting the app. Set `PUBLIC_ORIGIN` to the exact origin you
 use in your browser (scheme and hostname, optional port, no trailing slash).
-Set `WEB_USERNAME` for the app login. Set `IMAP_USERNAME` if you supply your
-Bridge password as a file; otherwise enter both Bridge credentials in the UI.
+Set `WEB_USERNAME` for the app login. Add mail providers in the UI or with
+`MAIL_PROVIDERS` (see [Mail providers](#mail-providers)).
 Personal hostnames and account names belong in your ignored `.env` file.
 Compose injects these variables into the app; running Python directly requires
 setting them in the process environment.
 
-You need PostgreSQL, an OpenAI-compatible AI endpoint, and Proton Mail Bridge
-listening on its standard host loopback IMAP port `127.0.0.1:1143`. Set the
+You need PostgreSQL and an OpenAI-compatible AI endpoint. Bridge providers also
+need Proton Mail Bridge listening on its standard host loopback IMAP port
+`127.0.0.1:1143`; IMAP providers connect directly from the app container. Set the
 database connection and AI settings for your own services. The Compose file
 joins two existing Docker networks; set `DATABASE_NETWORK` and `AI_NETWORK`
 to networks where those services are reachable. Create or provision those
@@ -34,6 +37,7 @@ the app creates its own tables.
 | `SECRETS_DIR`, `STATE_DIR`, `SOCKET_DIR` | Host storage; defaults to `./secrets`, `./state`, `./run` |
 | `HOST_PORT` | Loopback HTTP port; defaults to `8000` |
 | `TZ` | Daily check timezone; defaults to `UTC` |
+| `MAIL_PROVIDERS`, `MAIL_<NAME>_*` | Optional mail providers defined by environment; see below |
 
 Create your configured storage directories, restrict their permissions, and
 make them accessible to container UID 1000. Put these files in `SECRETS_DIR`:
@@ -44,12 +48,13 @@ make them accessible to container UID 1000. Put these files in `SECRETS_DIR`:
 | `web-password-hash` (recommended) | Argon2id hash of the app password; takes precedence over `web-password` |
 | `db-password` | Password for the dedicated PostgreSQL role |
 | `ai-key` | API key for your configured AI endpoint |
-| `bridge-cert.pem` | Certificate copied from the trusted local Bridge listener |
-| `imap-password` (optional) | Bridge-generated IMAP password |
+| `bridge-cert.pem` | Certificate copied from the trusted local Bridge listener (Bridge providers only) |
+| `<name>-imap-password` (optional) | Mailbox password for provider `<name>` |
 
 Use mode 600 for credentials. The Bridge password is separate from your Proton
-account password. UI-provided IMAP credentials live in `state/`, also mode 600;
-a file-provided password takes precedence over the UI-provided password.
+account password. UI-provided passwords live in `state/<name>-imap-password`,
+also mode 600. A secrets file takes precedence over `MAIL_<NAME>_PASSWORD`,
+which takes precedence over a password entered in the UI.
 Secrets, environment files, runtime state, keys, and certificates are ignored
 by Git and excluded from the Docker build context.
 
@@ -66,6 +71,31 @@ with private network access controls, and set `PUBLIC_ORIGIN` to its external
 origin. Session cookies require HTTPS, including browser testing. Set `PUBLIC_ORIGIN` to the exact HTTPS origin (without a trailing slash).
 If you run Compose from another directory, pass `--env-file /path/to/.env`.
 
+## Mail providers
+
+Each provider has a name, connection type, host and port (IMAP only),
+username, password, optional webmail link, and optional scoring guidance that
+is added to the AI prompt, such as "prioritize clients and invoices; rank SaaS
+notifications low". The **Providers** page (`/providers`, linked in the header)
+adds, edits, removes, and runs **Test connection**. A test logs in read-only and reports the inbox size.
+
+To define providers in the environment instead, list their names in
+`MAIL_PROVIDERS` and set `MAIL_<NAME>_LABEL`, `_TYPE` (`imap` or `bridge`),
+`_HOST`, `_PORT`, `_USERNAME`, `_PASSWORD`, `_WEBMAIL`, and `_FOCUS`; names use
+lowercase letters, digits, and hyphens, and become uppercase with underscores
+in variable names. Fields set this way are locked in the UI and reapplied on
+startup; the rest stay editable. Environment providers can't be removed in the
+UI. [`.env.example`](.env.example) shows a Bridge plus Zoho Mail setup. For
+Zoho, Gmail, and similar services, enable IMAP access in their settings and
+use an app-specific password. Only implicit TLS (usually port 993) is
+supported; plain IMAP and STARTTLS servers other than Bridge are not.
+
+Upgrading from the single-mailbox version migrates its Proton mailbox to a
+Bridge provider named `proton`, keeping scores and their dates. A UI-saved
+password moves to `state/proton-imap-password`; rename a
+`secrets/imap-password` file to `secrets/proton-imap-password` yourself.
+To keep environment control, add `proton` to `MAIL_PROVIDERS`.
+
 ## Use
 
 The **Sign in** page uses your configured `WEB_USERNAME` and existing app password.
@@ -81,15 +111,20 @@ the same error. Login and other POST requests require the exact configured
 Origin and a custom header. Browser clients redirect to the login page when
 the session expires; unauthenticated APIs return 401 without a Basic challenge.
 
-Enter your configured app credentials to sign in. Enter the Bridge
-IMAP username and password if needed, then press **Refresh inbox**.
+Enter your configured app credentials to sign in, add a provider on the
+**Providers** page if none exists, then press **Refresh inbox**. With two or more providers, tabs filter
+to **All inboxes** or a single provider; stats, refresh, and lists follow the
+selection, and cards in **All inboxes** name their provider. Each provider has
+its own credentials, inbox, scores, and refresh; one failing does not affect
+the others.
 **Top 10** shows the highest-scored emails needing a reply. **All inbox** shows
 all titles with search and pagination. Each title links to its preview,
 sender/date, score, reason, and recommended next step. **Copy subject** and
-**Open Proton Mail** help locate the original; Bridge does not provide Proton
-web message IDs for direct links.
+**Open webmail** (when the provider has a webmail link) help locate the
+original; IMAP does not provide web message IDs for direct links.
 
-An inbox check runs on startup and daily at/after 07:00 in your configured `TZ`.
+An inbox check runs for every provider on startup, when its credentials are
+added, and daily at/after 07:00 in your configured `TZ`.
 Refresh scans new mail, updates flags/removals, and scores new emails or emails
 whose analysis is at least seven days old. It does not bypass the seven-day
 cache. Failed analyses preserve existing scores and dates and are retried.
@@ -98,7 +133,7 @@ recommendations requiring no response are excluded from Top 10.
 
 ## Architecture and privacy
 
-- FastAPI serves the UI/API and one background inbox worker; PostgreSQL stores
+- FastAPI serves the UI/API and one background worker per provider; PostgreSQL stores
   previews and scores. Protect database access and backups as sensitive mail.
 - Email subjects, senders, dates, flags, and bounded text previews go to the
   configured AI endpoint. A proxy/model alias may route to a cloud provider;
@@ -108,8 +143,11 @@ recommendations requiring no response are excluded from Top 10.
   integer scores in range, and bounded explanations.
 - The IMAP client uses `EXAMINE`, `UID SEARCH`, and `BODY.PEEK`. A command
   allowlist blocks message mutations and non-PEEK body fetches. There is no
-  SMTP connection or send endpoint. The Bridge credential remains capable of
+  SMTP connection or send endpoint. Mailbox credentials remain capable of
   writes in other clients.
+- IMAP providers connect directly over implicit TLS, verified against the
+  system certificate store with TLS 1.2 or newer. Connection tests can reach
+  any host and port, so only trusted users should have the app login.
 - A separate relay exposes a mode-600 UNIX socket connected only to loopback
   IMAP. It stores no credentials and publishes no TCP listener. The app uses
   ordinary Docker networks, without the Docker socket or Bridge state mounts.
@@ -172,7 +210,8 @@ set the GHCR package visibility to public if you want anonymous image pulls.
 Integration tests in `tests/test_sync.py` require PostgreSQL and the mounted
 `db-password` file. They create and drop a disposable schema and cover cache
 reuse/expiry, UIDVALIDITY resets, answered/removed mail, and preserving scores
-on AI failure. Run them against a test database with the corresponding `PG*`
+on AI failure, provider isolation and ranking across providers, environment
+locking, and the single-mailbox upgrade. Run them against a test database with the corresponding `PG*`
 environment variables; they mock IMAP and AI and never read the real inbox.
 
 ### Provision or rotate the password hash

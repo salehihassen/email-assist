@@ -16,3 +16,23 @@ input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(-
 .header-actions{display:flex;align-items:center;gap:14px}
 .sign-out{padding:8px 12px;background:transparent;border:1px solid var(--line);color:var(--green);font-size:12px}
 @media(max-width:650px){.login-shell{padding:28px 18px}.login-card{padding:28px 24px}.header-actions{gap:8px}.header-actions .private{display:none}}
+
+/* Provider filter and settings, reusing the inbox card and tab styles. */
+.filter{display:inline-flex;flex-wrap:wrap;margin-bottom:18px}
+.sign-out.active{background:#e8ecdf}
+.header-actions a.sign-out:hover{filter:none;background:#eff2e8}
+.panel{background:white;border:1px solid var(--line);border-radius:10px;padding:28px;margin-top:24px}
+.panel .section-head{margin:0 0 20px}
+.provider-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0;border-top:1px solid var(--line)}
+.provider-row .metadata{margin-top:6px}
+.row-actions,.form-actions{display:flex;gap:10px;flex-wrap:wrap}
+.row-actions .secondary,.form-actions .secondary{margin-left:0}
+#provider-form{border-top:1px solid var(--line);padding-top:22px;margin-top:6px}
+#provider-form h3{margin:0 0 18px;font-size:15px}
+.fields{display:grid;grid-template-columns:repeat(2,1fr);column-gap:18px}
+select,textarea{display:block;width:100%;background:white;border:1px solid var(--line);border-radius:6px;padding:12px;margin:8px 0 18px;color:var(--ink);font:14px system-ui,-apple-system,sans-serif}
+textarea{resize:vertical}
+input:disabled,select:disabled,textarea:disabled{background:#f2f4ee;color:var(--muted)}
+#form-result{font-size:13px;min-height:20px}
+.error-text{color:#984329}
+@media(max-width:650px){.fields{grid-template-columns:1fr}.provider-row{flex-direction:column;align-items:start}.panel{padding:22px 18px}}

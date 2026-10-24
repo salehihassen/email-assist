@@ -45,7 +45,7 @@ def token_hash(token):
 
 
 def safe_next(value):
-    if value == '/' or re.fullmatch(r'/email/[a-zA-Z0-9_-]{1,128}', value):
+    if value in ('/', '/providers') or re.fullmatch(r'/email/[a-zA-Z0-9_-]{1,128}', value):
         return value
     return '/'
 
