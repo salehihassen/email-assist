@@ -552,11 +552,13 @@ def emails(top: bool = False, q: str = '', page: int = 1, provider: str = ''):
         filters += ' AND provider=%s'
         args.append(provider)
     if top:
-        filters += " AND response_needed AND score IS NOT NULL AND NOT flags @> '[\"\\\\Answered\"]'::jsonb"
+        filters += " AND score IS NOT NULL AND NOT flags @> '[\"\\\\Answered\"]'::jsonb"
+    # Top 10 puts emails that need a reply first, then fills up by score.
+    order = ('response_needed DESC NULLS LAST,' if top else '') + 'score DESC NULLS LAST,sent_at DESC NULLS LAST,id'
     with db() as conn:
         count = conn.execute('SELECT count(*) AS n FROM emails WHERE '+filters,args).fetchone()['n']
         rows = conn.execute('''SELECT id,provider,subject,sender,sent_at,score,analyze_date,response_needed,reason,suggested_action,flags,truncated
-            FROM emails WHERE '''+filters+' ORDER BY score DESC NULLS LAST,sent_at DESC NULLS LAST,id LIMIT %s OFFSET %s',
+            FROM emails WHERE '''+filters+' ORDER BY '+order+' LIMIT %s OFFSET %s',
             args+[10 if top else 50,0 if top else (page-1)*50]).fetchall()
     return {'emails':rows,'total':count,'page':page}
 

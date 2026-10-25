@@ -38,9 +38,10 @@ async function loadStatus() {
     const shown=selected ? providers.filter(p => p.id === selected) : providers, many=shown.length > 1, name=p => many ? p.label+': ' : '';
     $('inbox-count').textContent=shown.reduce((n,p) => n+p.inbox,0).toLocaleString();$('scored-count').textContent=shown.reduce((n,p) => n+p.scored,0).toLocaleString();
     const scan=latest(shown.map(p => p.last_scan));$('last-scan').textContent=scan ? new Date(scan).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}) : 'Not yet';
-    $('model-label').textContent=d.model;$('refresh').textContent=many ? '↻ Refresh all inboxes' : '↻ Refresh inbox';$('refresh').disabled=shown.every(p => p.running || !p.configured);
-    const running=shown.filter(p => p.running), failed=shown.filter(p => p.error || p.last_error), missing=shown.filter(p => !p.configured);
-    $('status').classList.toggle('error',failed.length > 0);
+    const running=shown.filter(p => p.running), failed=shown.filter(p => !p.running && (p.error || p.last_error)), missing=shown.filter(p => !p.configured);
+    $('model-label').textContent=d.model;$('refresh').textContent=running.length ? 'Refreshing…' : many ? '↻ Refresh all inboxes' : '↻ Refresh inbox';
+    $('refresh').disabled=running.length > 0 || shown.every(p => !p.configured);
+    $('status').classList.toggle('error',!running.length && failed.length > 0);
     $('status').textContent=running.length ? running.map(p => `${name(p)}${p.phase} · ${p.processed} / ${p.total} · ${p.analyzed} scored · ${p.cached} cached`).join(' — ')
       : failed.length ? failed.map(p => name(p)+(p.error || p.last_error)).join(' — ')
       : !providers.length ? 'Add a mail provider under Providers to start.'

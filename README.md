@@ -159,7 +159,8 @@ to **All inboxes** or a single provider; stats, refresh, and lists follow the
 selection, and cards in **All inboxes** name their provider. Each provider has
 its own credentials, inbox, scores, and refresh; one failing does not affect
 the others.
-**Top 10** shows the highest-scored emails needing a reply. **All inbox** shows
+**Top 10** shows the highest-scored emails needing a reply, then fills up with
+the next highest-scored emails. **All inbox** shows
 all titles with search and pagination. Each title links to its preview,
 sender/date, score, reason, and recommended next step. **Copy subject** and
 **Open webmail** (when the provider has a webmail link) help locate the
@@ -170,8 +171,8 @@ added, and daily at/after 07:00 in your configured `TZ`.
 Refresh scans new mail, updates flags/removals, and scores new emails or emails
 whose analysis is at least seven days old. It does not bypass the seven-day
 cache. Failed analyses preserve existing scores and dates and are retried.
-Higher scores mean more urgency and importance. Answered messages and
-recommendations requiring no response are excluded from Top 10.
+Higher scores mean more urgency and importance. Answered messages are
+excluded from Top 10.
 
 ## Architecture and privacy
 

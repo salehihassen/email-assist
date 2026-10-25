@@ -68,6 +68,14 @@ class Sync(unittest.TestCase):
         with patch.object(app.mail,'inbox_uids',return_value=[]):self.run_sync()
         self.assertEqual(app.emails()['total'],0)
 
+    def test_top_ten_fills_with_emails_needing_no_reply(self):
+        quiet=self.scores('zoho','message-two');next(iter(quiet.values())).update(score=95,response_needed=False)
+        with patch.object(app.mail,'fetch',return_value=self.item|{'id':'message-two'}),patch.object(app,'analyze',return_value=quiet):
+            self.run_sync('zoho')
+        self.assertEqual([e['provider'] for e in app.emails(top=True,provider='zoho')['emails']],['zoho'])
+        with patch.object(app,'analyze',return_value=self.scores()):self.run_sync()
+        self.assertEqual([e['provider'] for e in app.emails(top=True)['emails']],['proton','zoho'])
+
     def test_model_failure_preserves_old_score_and_date(self):
         with patch.object(app,'analyze',return_value=self.scores()):self.run_sync()
         with app.db() as c:
