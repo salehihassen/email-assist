@@ -22,5 +22,5 @@ Describe the additional steps needed if reverting the PR alone would be insuffic
 
 If AI helped write this PR, add a visible one-line attribution at the end of the PR body. List every model that helped write it.
 
-**AI assistance** — model name, model name
+**Co-Authored-By**: model name, model name
 -->
